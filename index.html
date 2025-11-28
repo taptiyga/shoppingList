@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Список покупок с ограниченным доступом</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 600px;
+            margin: auto;
+        }
+
+        input {
+            padding: 8px;
+            width: 70%;
+            margin-bottom: 10px;
+        }
+
+        button {
+            padding: 8px;
+            margin-bottom: 10px;
+        }
+
+        li {
+            cursor: pointer;
+            margin: 5px 0;
+        }
+
+        li:hover {
+            text-decoration: line-through;
+            color: red;
+        }
+
+        #loginForm,
+        #app {
+            display: none;
+        }
+
+        .disabled {
+            opacity: 0.5;
+            cursor: default;
+            text-decoration: none !important;
+            color: black !important;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Список покупок (контроль доступа)</h1>
+
+    <!-- Вход/регистрация -->
+    <div id="loginForm">
+        <h3>Вход / Регистрация</h3>
+        <input id="email" type="email" placeholder="Email" /><br>
+        <input id="password" type="password" placeholder="Пароль" /><br>
+        <button onclick="signIn()">Войти</button>
+        <button onclick="signUp()">Зарегистрироваться</button>
+        <p id="loginMsg"></p>
+    </div>
+
+    <!-- Основное приложение -->
+    <div id="app">
+        <p>Вы вошли как <span id="userEmail"></span> <button onclick="signOut()">Выйти</button></p>
+
+        <!-- Поля для редактирующих -->
+        <input id="itemInput" placeholder="Введите товар..." />
+        <button id="addBtn" onclick="addItem()">Добавить</button>
+
+        <ul id="list"></ul>
+    </div>
+
+    <script>
+        const SUPABASE_URL = "https://qprgplcrgokmkpzxiynf.supabase.co";
+        const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFwcmdwbGNyZ29rbWtwenhpeW5mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQyMzM5NzAsImV4cCI6MjA3OTgwOTk3MH0.-nx2lQe9prncTIlvLPsYB-50l3ue7xc1wL5jSnseN_s";
+        const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        const loginForm = document.getElementById('loginForm');
+        const appDiv = document.getElementById('app');
+        const userEmailSpan = document.getElementById('userEmail');
+        const listEl = document.getElementById('list');
+        const loginMsg = document.getElementById('loginMsg');
+        const itemInput = document.getElementById('itemInput');
+        const addBtn = document.getElementById('addBtn');
+
+        let canEdit = false;
+
+        // Проверка сессии
+        async function checkUser() {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user) {
+                showApp(session.user.email);
+                await checkPermissions(session.user.email);
+            } else {
+                loginForm.style.display = 'block';
+            }
+        }
+
+        // Показ основного приложения
+        function showApp(email) {
+            loginForm.style.display = 'none';
+            appDiv.style.display = 'block';
+            userEmailSpan.textContent = email;
+        }
+
+        // Проверка прав
+        async function checkPermissions(email) {
+            const { data } = await supabase
+                .from('allowed_users')
+                .select('email')
+                .eq('email', email);
+
+            canEdit = data.length > 0;
+
+            // Показываем или скрываем поля добавления
+            itemInput.style.display = canEdit ? 'inline-block' : 'none';
+            addBtn.style.display = canEdit ? 'inline-block' : 'none';
+
+            fetchList();
+        }
+
+        // Регистрация
+        async function signUp() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const { error } = await supabase.auth.signUp({ email, password });
+            loginMsg.textContent = error ? error.message : 'Проверьте почту для подтверждения!';
+        }
+
+        // Вход
+        async function signIn() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+            if (error) {
+                loginMsg.textContent = error.message;
+            } else {
+                showApp(data.user.email);
+                await checkPermissions(data.user.email);
+            }
+        }
+
+        // Выход
+        async function signOut() {
+            await supabase.auth.signOut();
+            appDiv.style.display = 'none';
+            loginForm.style.display = 'block';
+        }
+
+        // Получение списка
+        async function fetchList() {
+            const { data } = await supabase.from('shopping_list').select('*').order('created_at', { ascending: true });
+            renderList(data);
+        }
+
+        // Отрисовка списка
+        function renderList(items) {
+            listEl.innerHTML = '';
+            items.forEach(item => {
+                const li = document.createElement('li');
+                li.textContent = item.text;
+
+                if (canEdit) {
+                    li.onclick = async () => {
+                        if (confirm("Удалить этот товар?")) {
+                            await supabase.from('shopping_list').delete().eq('id', item.id);
+                        }
+                    };
+                } else {
+                    li.classList.add('disabled');
+                    li.onclick = () => alert("У вас нет прав на редактирование списка");
+                }
+
+                listEl.appendChild(li);
+            });
+        }
+
+        // Добавление товара
+        async function addItem() {
+            const text = itemInput.value.trim();
+            if (!text) return;
+            await supabase.from('shopping_list').insert([{ text }]);
+            itemInput.value = '';
+        }
+
+        // Realtime подписка
+        supabase
+            .channel('shopping_list_changes')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_list' }, payload => {
+                fetchList();
+            })
+            .subscribe();
+
+        checkUser();
+    </script>
+
+</body>
+
+</html>
