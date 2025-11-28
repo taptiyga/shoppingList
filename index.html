@@ -68,8 +68,12 @@
         <p>Вы вошли как <span id="userEmail"></span> <button onclick="signOut()">Выйти</button></p>
 
         <!-- Поля для редактирующих -->
-        <input id="itemInput" placeholder="Введите товар..." />
-        <button id="addBtn" onclick="addItem()">Добавить</button>
+        <div id="editSection">
+            <input id="itemInput" placeholder="Введите товар..." />
+            <button id="addBtn" onclick="addItem()">Добавить</button>
+        </div>
+
+        <p id="noRightsMsg" style="color:red; display:none;">У вас нет прав на редактирование списка.</p>
 
         <ul id="list"></ul>
     </div>
@@ -86,15 +90,20 @@
         const loginMsg = document.getElementById('loginMsg');
         const itemInput = document.getElementById('itemInput');
         const addBtn = document.getElementById('addBtn');
+        const editSection = document.getElementById('editSection');
+        const noRightsMsg = document.getElementById('noRightsMsg');
 
         let canEdit = false;
+        let user = null;
+        let realtimeSubscribed = false;
 
         // Проверка сессии
         async function checkUser() {
             const { data: { session } } = await supabase.auth.getSession();
             if (session?.user) {
-                showApp(session.user.email);
-                await checkPermissions(session.user.email);
+                user = session.user;
+                showApp(user.email);
+                await checkPermissions();
             } else {
                 loginForm.style.display = 'block';
             }
@@ -107,20 +116,20 @@
             userEmailSpan.textContent = email;
         }
 
-        // Проверка прав
-        async function checkPermissions(email) {
+        // Проверка прав через таблицу allowed_users
+        async function checkPermissions() {
             const { data } = await supabase
                 .from('allowed_users')
                 .select('email')
-                .eq('email', email);
+                .eq('email', user.email);
 
             canEdit = data.length > 0;
 
-            // Показываем или скрываем поля добавления
-            itemInput.style.display = canEdit ? 'inline-block' : 'none';
-            addBtn.style.display = canEdit ? 'inline-block' : 'none';
+            editSection.style.display = canEdit ? 'block' : 'none';
+            noRightsMsg.style.display = canEdit ? 'none' : 'block';
 
-            fetchList();
+            await fetchList();
+            subscribeRealtime(); // подписка на изменения
         }
 
         // Регистрация
@@ -139,21 +148,26 @@
             if (error) {
                 loginMsg.textContent = error.message;
             } else {
-                showApp(data.user.email);
-                await checkPermissions(data.user.email);
+                user = data.user;
+                showApp(user.email);
+                await checkPermissions();
             }
         }
 
         // Выход
         async function signOut() {
             await supabase.auth.signOut();
+            user = null;
             appDiv.style.display = 'none';
             loginForm.style.display = 'block';
         }
 
         // Получение списка
         async function fetchList() {
-            const { data } = await supabase.from('shopping_list').select('*').order('created_at', { ascending: true });
+            const { data } = await supabase
+                .from('shopping_list')
+                .select('*')
+                .order('created_at', { ascending: true });
             renderList(data);
         }
 
@@ -168,6 +182,7 @@
                     li.onclick = async () => {
                         if (confirm("Удалить этот товар?")) {
                             await supabase.from('shopping_list').delete().eq('id', item.id);
+                            fetchList();
                         }
                     };
                 } else {
@@ -185,16 +200,21 @@
             if (!text) return;
             await supabase.from('shopping_list').insert([{ text }]);
             itemInput.value = '';
+            fetchList();
         }
 
-        // Realtime подписка
-        supabase
-            .channel('shopping_list_changes')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_list' }, payload => {
-                fetchList();
-            })
-            .subscribe();
-    console.log('Supabase:', supabase);
+        // Realtime подписка (один раз)
+        function subscribeRealtime() {
+            if (realtimeSubscribed) return;
+            realtimeSubscribed = true;
+
+            supabase
+                .channel('shopping_list_changes')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_list' }, payload => {
+                    fetchList();
+                })
+                .subscribe();
+        }
 
         checkUser();
     </script>
