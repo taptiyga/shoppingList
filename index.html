@@ -5,7 +5,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Список покупок с ограниченным доступом</title>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -77,7 +77,7 @@
     <script>
         const SUPABASE_URL = "https://qprgplcrgokmkpzxiynf.supabase.co";
         const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFwcmdwbGNyZ29rbWtwenhpeW5mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQyMzM5NzAsImV4cCI6MjA3OTgwOTk3MH0.-nx2lQe9prncTIlvLPsYB-50l3ue7xc1wL5jSnseN_s";
-        const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         const loginForm = document.getElementById('loginForm');
         const appDiv = document.getElementById('app');
@@ -194,6 +194,7 @@
                 fetchList();
             })
             .subscribe();
+    console.log('Supabase:', supabase);
 
         checkUser();
     </script>
